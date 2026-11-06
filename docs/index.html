@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Medical PPT Generator</title>
+<style>
+  :root { --bg:#f5f8fb; --card:#fff; --ink:#1b2430; --mute:#5b6675; --accent:#0e8a8a; --navy:#122b4a; --line:#dde4ec; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0f151d; --card:#18212c; --ink:#e8eef5; --mute:#97a3b3; --accent:#3cc0c0; --navy:#7fb2e5; --line:#2a3645; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--ink); line-height:1.5; }
+  main { max-width:880px; margin:0 auto; padding:24px 16px 64px; }
+  h1 { color:var(--navy); margin:0 0 4px; font-size:1.8rem; }
+  .sub { color:var(--mute); margin:0 0 24px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; margin-bottom:18px; }
+  h2 { font-size:1.05rem; margin:0 0 12px; }
+  .topics { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:8px; }
+  .topic { border:1px solid var(--line); background:transparent; color:var(--ink); border-radius:8px; padding:10px; text-align:left; cursor:pointer; font:inherit; }
+  .topic:hover, .topic.sel { border-color:var(--accent); background:color-mix(in srgb, var(--accent) 12%, transparent); }
+  label { display:block; font-size:.85rem; color:var(--mute); margin:12px 0 4px; }
+  input, select { width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--ink); font:inherit; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  button.go { margin-top:16px; background:var(--accent); color:#fff; border:0; border-radius:8px; padding:11px 18px; font:inherit; font-weight:600; cursor:pointer; }
+  button.go:disabled { opacity:.5; cursor:wait; }
+  #status { margin-top:12px; font-size:.9rem; color:var(--mute); }
+  .deck { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:10px 0; border-top:1px solid var(--line); }
+  .deck:first-child { border-top:0; }
+  .deck small { color:var(--mute); display:block; }
+  a.dl { color:var(--accent); font-weight:600; text-decoration:none; white-space:nowrap; }
+  details summary { cursor:pointer; color:var(--mute); }
+  .note { font-size:.8rem; color:var(--mute); margin-top:8px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Medical PPT Generator</h1>
+  <p class="sub">Pick a topic, and GitHub Actions builds a deck with AI-written slides and open-access medical images.</p>
+
+  <div class="card">
+    <h2>1. Choose a topic</h2>
+    <div class="topics" id="topics"></div>
+    <label for="custom">...or type your own</label>
+    <input id="custom" placeholder="e.g. Diabetic ketoacidosis">
+    <div class="row">
+      <div>
+        <label for="slides">Content slides</label>
+        <select id="slides"><option>6</option><option selected>10</option><option>14</option><option>18</option></select>
+      </div>
+      <div>
+        <label for="aud">Audience</label>
+        <select id="aud">
+          <option>medical students</option><option>nursing students</option>
+          <option>junior doctors</option><option>general public</option>
+        </select>
+      </div>
+    </div>
+    <button class="go" id="go">Generate deck</button>
+    <div id="status"></div>
+  </div>
+
+  <div class="card">
+    <h2>Generated decks</h2>
+    <div id="decks"><span class="note">Loading...</span></div>
+  </div>
+
+  <details class="card">
+    <summary>Settings (GitHub token)</summary>
+    <label for="tok">Fine-grained personal access token (Actions: read and write, this repo only)</label>
+    <input id="tok" type="password" placeholder="github_pat_...">
+    <p class="note">Stored only in this browser's localStorage. It is needed because a static page cannot start a workflow on its own.</p>
+  </details>
+</main>
+
+<script>
+const TOPICS = ["Myocardial infarction","Type 2 diabetes mellitus","Asthma","Pulmonary tuberculosis","Ischaemic stroke",
+  "Hypertension","Community-acquired pneumonia","Iron deficiency anaemia","Sepsis","Chronic kidney disease",
+  "Heart failure","Rheumatoid arthritis","Malaria","Epilepsy","Thyroid disorders","COPD"];
+
+// Works on https://<owner>.github.io/<repo>/ ; override here for custom domains.
+const OWNER = location.hostname.split(".")[0];
+const REPO  = location.pathname.split("/")[1];
+const WORKFLOW = "generate.yml", BRANCH = "main";
+
+const $ = id => document.getElementById(id);
+let chosen = "";
+
+TOPICS.forEach(t => {
+  const b = document.createElement("button");
+  b.className = "topic"; b.textContent = t;
+  b.onclick = () => { chosen = t; $("custom").value = ""; document.querySelectorAll(".topic").forEach(x => x.classList.toggle("sel", x === b)); };
+  $("topics").appendChild(b);
+});
+$("custom").oninput = () => { chosen = ""; document.querySelectorAll(".topic").forEach(x => x.classList.remove("sel")); };
+
+try { $("tok").value = localStorage.getItem("gh_token") || ""; } catch (e) {}
+$("tok").onchange = () => { try { localStorage.setItem("gh_token", $("tok").value.trim()); } catch (e) {} };
+
+async function loadDecks() {
+  try {
+    const r = await fetch("decks.json?t=" + Date.now());
+    const list = await r.json();
+    $("decks").innerHTML = list.length ? "" : '<span class="note">No decks yet.</span>';
+    list.forEach(d => {
+      const el = document.createElement("div");
+      el.className = "deck";
+      el.innerHTML = `<div><strong></strong><small></small></div><a class="dl">Download .pptx</a>`;
+      el.querySelector("strong").textContent = d.title;
+      el.querySelector("small").textContent = `${d.slides} slides, ${d.images} images, ${new Date(d.created).toLocaleString()}`;
+      el.querySelector("a").href = d.file;
+      $("decks").appendChild(el);
+    });
+    return list;
+  } catch (e) { $("decks").innerHTML = '<span class="note">No decks yet.</span>'; return []; }
+}
+
+$("go").onclick = async () => {
+  const topic = (chosen || $("custom").value).trim();
+  const token = $("tok").value.trim();
+  if (!topic) return $("status").textContent = "Pick or type a topic first.";
+  if (!token) return $("status").textContent = "Add your GitHub token under Settings first.";
+  $("go").disabled = true;
+  $("status").textContent = "Starting workflow...";
+  try {
+    const r = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW}/dispatches`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" },
+      body: JSON.stringify({ ref: BRANCH, inputs: { topic, slides: $("slides").value, audience: $("aud").value } })
+    });
+    if (r.status !== 204) throw new Error(`GitHub returned ${r.status}`);
+    const before = (await loadDecks()).length;
+    $("status").textContent = "Building (usually 1-3 minutes, plus a minute for Pages to refresh)...";
+    const timer = setInterval(async () => {
+      const now = (await loadDecks()).length;
+      if (now > before) { clearInterval(timer); $("status").textContent = "Done. Your deck is at the top of the list."; $("go").disabled = false; }
+    }, 15000);
+    setTimeout(() => { clearInterval(timer); $("go").disabled = false; }, 15 * 60 * 1000);
+  } catch (e) {
+    $("status").textContent = "Failed: " + e.message;
+    $("go").disabled = false;
+  }
+};
+loadDecks();
+</script>
+</body>
+</html>
