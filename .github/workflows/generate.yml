@@ -1,0 +1,52 @@
+name: Generate medical deck
+
+on:
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: Medical topic
+        required: true
+      slides:
+        description: Number of content slides
+        default: "10"
+      audience:
+        description: Audience
+        default: medical students
+
+permissions:
+  contents: write
+
+# One run at a time so commits to decks.json never collide
+concurrency:
+  group: deck-generation
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Generate deck
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          TOPIC: ${{ inputs.topic }}
+          SLIDES: ${{ inputs.slides }}
+          AUDIENCE: ${{ inputs.audience }}
+        run: python generate.py --topic "$TOPIC" --slides "$SLIDES" --audience "$AUDIENCE"
+
+      - name: Commit result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs
+          git commit -m "Add deck: ${{ github.run_id }}" || exit 0
+          git pull --rebase
+          git push
